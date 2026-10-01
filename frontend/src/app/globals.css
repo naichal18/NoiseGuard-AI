@@ -1,0 +1,220 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #33ff00;
+
+  --terminal-primary: #33ff00;
+  --terminal-secondary: #ffb000;
+  --terminal-muted: #1f521f;
+  --terminal-error: #ff3333;
+  --terminal-border: #1f521f;
+  --terminal-surface: #0d0d0d;
+  --terminal-surface-hover: #111711;
+}
+
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(51, 255, 0, 0.025),
+      transparent 38%
+    ),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-terminal), monospace;
+  overflow-x: hidden;
+}
+
+/* Selection */
+::selection {
+  background: var(--terminal-primary);
+  color: #000;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--terminal-muted);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--terminal-primary);
+}
+
+/* Terminal glow */
+.terminal-glow {
+  text-shadow: 0 0 5px rgba(51, 255, 0, 0.5);
+}
+
+.terminal-glow-strong {
+  text-shadow:
+    0 0 5px rgba(51, 255, 0, 0.55),
+    0 0 15px rgba(51, 255, 0, 0.2);
+}
+
+/* Blinking terminal cursor */
+.terminal-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.12em;
+  background: var(--terminal-primary);
+  box-shadow: 0 0 5px rgba(51, 255, 0, 0.5);
+  animation: terminal-blink 1s steps(2, start) infinite;
+}
+
+@keyframes terminal-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Subtle CRT scanlines */
+.crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.035;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    rgba(51, 255, 0, 0.18) 3px,
+    transparent 4px
+  );
+}
+
+/* Terminal border utility */
+.terminal-border {
+  border: 1px solid var(--terminal-border);
+}
+
+.terminal-border-dashed {
+  border: 1px dashed var(--terminal-border);
+}
+
+/* Terminal panel */
+.terminal-panel {
+  background: var(--terminal-surface);
+  border: 1px solid var(--terminal-border);
+}
+
+/* Terminal button */
+.terminal-button {
+  border: 1px solid var(--terminal-primary);
+  background: transparent;
+  color: var(--terminal-primary);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.terminal-button:hover {
+  background: var(--terminal-primary);
+  color: #000;
+  box-shadow: 0 0 12px rgba(51, 255, 0, 0.2);
+}
+
+.terminal-button:active {
+  transform: translateY(1px);
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 1px solid var(--terminal-primary);
+  outline-offset: 3px;
+}
+
+/* Prevent accidental rounded UI */
+button,
+input,
+textarea,
+select {
+  border-radius: 0;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =========================================================
+   LEAFLET MAP — NOISEGUARD SIZE FIX
+========================================================= */
+
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  background: #050a05 !important;
+}
+
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane {
+  position: absolute;
+}
+
+.leaflet-tile-pane {
+  width: 100%;
+  height: 100%;
+}
+
+.leaflet-container img.leaflet-tile {
+  max-width: none !important;
+}
+
+.leaflet-container .leaflet-tile {
+  visibility: visible;
+}
+
+.leaflet-control-container {
+  pointer-events: none;
+}
+
+.leaflet-control {
+  pointer-events: auto;
+}

@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: noiseguard-ai-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: noiseguard
+      POSTGRES_USER: noiseguard
+      POSTGRES_PASSWORD: noiseguard_dev_password
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - noiseguard_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noiseguard -d noiseguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  noiseguard_postgres_data:
