@@ -33,8 +33,10 @@ import SettingsPanel from "@/components/dashboard/SettingsPanel";
 import SystemConfigPanel from "@/components/dashboard/SystemConfigPanel";
 import TerminalPanel from "@/components/ui/TerminalPanel";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
-const WS_URL = "ws://127.0.0.1:8000/ws/noise";
+const API_BASE_URL =
+   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const WS_URL =
+   process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:8000/ws/noise";
 
 interface DashboardMetrics {
   avg_noise_level: number;

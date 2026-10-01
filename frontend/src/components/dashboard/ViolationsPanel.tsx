@@ -15,9 +15,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import TerminalPanel from "@/components/ui/TerminalPanel";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
-  "http://127.0.0.1:8000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 type Source = "all" | "dataset" | "simulator" | "api" | "sensor";
 type Severity = "all" | "MODERATE" | "HIGH" | "CRITICAL";
@@ -191,10 +190,10 @@ export default function ViolationsPanel() {
       try {
         const [summaryResponse, listResponse] = await Promise.all([
           fetch(
-            `${API_BASE}/api/violations/summary?hours=${hours}&source=${source}`,
+            `${API_BASE_URL}/api/violations/summary?hours=${hours}&source=${source}`,
             { cache: "no-store" },
           ),
-          fetch(`${API_BASE}/api/violations?${query}`, {
+          fetch(`${API_BASE_URL}/api/violations?${query}`, {
             cache: "no-store",
           }),
         ]);

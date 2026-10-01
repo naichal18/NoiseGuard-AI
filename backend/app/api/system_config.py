@@ -42,7 +42,10 @@ SYSTEM_DEFAULTS: dict[str, Any] = {
     "logs_retention_days": 30,
     "auto_cleanup": True,
     "enable_cors": True,
-    "allowed_origins": "http://localhost:3000,http://127.0.0.1:3000",
+    "allowed_origins": os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+),
     "api_key_required": False,
     "rate_limit_per_minute": 100,
 }

@@ -1,3 +1,4 @@
+import os
 import json
 import math
 import random
@@ -8,7 +9,10 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 
-API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = os.getenv(
+    "API_BASE_URL",
+    "http://127.0.0.1:8000",
+)
 DEFAULT_INTERVAL_SECONDS = 5
 SETTINGS_REFRESH_SECONDS = 2
 

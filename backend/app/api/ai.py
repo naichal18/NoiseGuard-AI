@@ -947,10 +947,10 @@ async def _call_openrouter(
         "Content-Type": "application/json",
 
         # OpenRouter metadata.
-        "HTTP-Referer": (
-            "http://localhost:3000"
-        ),
-
+        "HTTP-Referer": os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:3000",
+),
         "X-Title": "NoiseGuard AI",
     }
 
