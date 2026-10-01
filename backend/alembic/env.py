@@ -1,4 +1,7 @@
+import os
 from logging.config import fileConfig
+
+from dotenv import load_dotenv
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -12,6 +15,22 @@ from app.models.noise_reading import NoiseReading
 # Alembic Config object
 config = context.config
 
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
+database_url = os.getenv("DATABASE_URL")
+
+if not database_url:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
+
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+
+database_url = os.getenv("DATABASE_URL")
+
+if not database_url:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
+
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+
 # Logging configuration
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -21,7 +40,10 @@ target_metadata = Base.metadata
 
 
 def include_object(object, name, type_, reflected, compare_to):
-    if type_ == "table" and reflected and name == "spatial_ref_sys":
+    if type_ == "table" and reflected and name in {
+        "spatial_ref_sys",
+        "noiseguard_settings",
+    }:
         return False
 
     return True
