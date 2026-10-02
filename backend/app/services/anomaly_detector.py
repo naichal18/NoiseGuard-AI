@@ -19,6 +19,12 @@ from app.models.sensor import Sensor
 MIN_BASELINE_READINGS = 30
 MIN_STD_DEV = 1.0
 
+# Fresh live streams do not have the previous analysis window
+# available yet. Use a small, sensor-specific warm-up baseline
+# until the normal historical baseline reaches MIN_BASELINE_READINGS.
+LIVE_BOOTSTRAP_READINGS = 10
+LIVE_SOURCES = {"simulator", "api", "sensor"}
+
 
 # ============================================================
 # ENVIRONMENTAL NOISE THRESHOLDS
@@ -1105,6 +1111,138 @@ def get_anomaly_analysis(
 
         baseline_by_sensor_source[key].append(reading)
 
+    # ========================================================
+    # LIVE BASELINE BOOTSTRAP
+    # ========================================================
+    #
+    # A fresh simulator cannot have readings in the historical
+    # window immediately preceding the current 24-hour analysis
+    # window. Without a bootstrap, the detector would stay at
+    # zero until a full analysis + baseline period had elapsed.
+    #
+    # We use only the earliest LIVE_BOOTSTRAP_READINGS from the
+    # current live window as a temporary baseline. Those readings
+    # are excluded from anomaly scoring, preventing the detector
+    # from using the same samples to define and test the baseline.
+    #
+    # The normal 30-reading historical baseline remains unchanged
+    # and automatically takes over once enough history exists.
+
+    live_bootstrap_cutoff_by_sensor_source: dict[
+        tuple[int, str],
+        datetime,
+    ] = {}
+
+    for source_name, (
+        analysis_start,
+        analysis_end,
+        baseline_start,
+    ) in source_windows.items():
+
+        if source_name not in LIVE_SOURCES:
+            continue
+
+        ranked_ids = (
+            db.query(
+                NoiseReading.id.label(
+                    "reading_id"
+                ),
+                NoiseReading.sensor_id.label(
+                    "sensor_id"
+                ),
+                func.row_number().over(
+                    partition_by=NoiseReading.sensor_id,
+                    order_by=NoiseReading.recorded_at.asc(),
+                ).label(
+                    "row_number"
+                ),
+            )
+            .filter(
+                NoiseReading.source == source_name,
+                NoiseReading.recorded_at >= analysis_start,
+                NoiseReading.recorded_at <= analysis_end,
+            )
+        )
+
+        if sensor_id is not None:
+            ranked_ids = ranked_ids.filter(
+                NoiseReading.sensor_id == sensor_id
+            )
+
+        ranked_ids = ranked_ids.subquery()
+
+        bootstrap_ids = (
+            db.query(
+                ranked_ids.c.reading_id
+            )
+            .filter(
+                ranked_ids.c.row_number
+                <= LIVE_BOOTSTRAP_READINGS
+            )
+            .all()
+        )
+
+        reading_ids = [
+            row[0]
+            for row in bootstrap_ids
+        ]
+
+        if not reading_ids:
+            continue
+
+        bootstrap_readings = (
+            db.query(NoiseReading)
+            .filter(
+                NoiseReading.id.in_(reading_ids)
+            )
+            .order_by(
+                NoiseReading.sensor_id.asc(),
+                NoiseReading.recorded_at.asc(),
+            )
+            .all()
+        )
+
+        bootstrap_by_sensor: dict[
+            int,
+            list[NoiseReading],
+        ] = defaultdict(list)
+
+        for reading in bootstrap_readings:
+            bootstrap_by_sensor[
+                reading.sensor_id
+            ].append(reading)
+
+        for (
+            bootstrap_sensor_id,
+            readings,
+        ) in bootstrap_by_sensor.items():
+
+            key = (
+                bootstrap_sensor_id,
+                source_name,
+            )
+
+            # Keep the proper historical baseline whenever it
+            # already satisfies the normal 30-reading requirement.
+            if len(
+                baseline_by_sensor_source.get(
+                    key,
+                    [],
+                )
+            ) >= MIN_BASELINE_READINGS:
+                continue
+
+            if len(readings) < LIVE_BOOTSTRAP_READINGS:
+                continue
+
+            baseline_by_sensor_source[key] = readings
+
+            live_bootstrap_cutoff_by_sensor_source[key] = (
+                _normalise_datetime(
+                    readings[-1].recorded_at
+                )
+            )
+
         # ========================================================
     # SENSOR METADATA
     # ========================================================
@@ -1219,11 +1357,32 @@ def get_anomaly_analysis(
             )
         )
 
+        using_live_bootstrap = (
+            baseline_key
+            in live_bootstrap_cutoff_by_sensor_source
+        )
+
         if (
             len(baseline)
             < MIN_BASELINE_READINGS
+            and not using_live_bootstrap
         ):
             continue
+
+        if using_live_bootstrap:
+            bootstrap_cutoff = (
+                live_bootstrap_cutoff_by_sensor_source[
+                    baseline_key
+                ]
+            )
+
+            if (
+                _normalise_datetime(
+                    reading.recorded_at
+                )
+                <= bootstrap_cutoff
+            ):
+                continue
 
         sensor = sensor_by_id.get(
             reading.sensor_id
@@ -1591,4 +1750,4 @@ def detect_anomalies(
 
     return analysis[
         "anomalies"
-    ]   
+    ]
