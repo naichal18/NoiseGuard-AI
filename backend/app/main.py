@@ -1,7 +1,8 @@
-
 from __future__ import annotations
-import os
+
 import json
+import os
+import threading
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -23,26 +24,110 @@ from app.core.database import SessionLocal, get_db
 from app.services.runtime_settings import get_runtime_settings
 from app.services.websocket_manager import websocket_manager
 
+
 app = FastAPI(
     title="NoiseGuard AI",
     description="Smart-city noise monitoring and AI analytics platform",
     version="1.0.0",
 )
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    origin.strip()
-    for origin in os.getenv(
-        "ALLOWED_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000",
-    ).split(",")
-    if origin.strip()
-],
+        origin.strip()
+        for origin in os.getenv(
+            "ALLOWED_ORIGINS",
+            "http://localhost:3000,http://127.0.0.1:3000",
+        ).split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# EMBEDDED CLOUD SIMULATOR
+# ---------------------------------------------------------------------------
+# The simulator normally runs as a separate local process:
+#
+#     python -m app.services.simulator
+#
+# For production, the same simulator can optionally run inside the
+# FastAPI Render Web Service as a background daemon thread.
+#
+# Local default:
+#     RUN_EMBEDDED_SIMULATOR=false
+#
+# Render:
+#     RUN_EMBEDDED_SIMULATOR=true
+#
+# This keeps local development unchanged while allowing the production
+# simulator to continue running without the user's laptop.
+# ---------------------------------------------------------------------------
+
+_embedded_simulator_thread: threading.Thread | None = None
+_embedded_simulator_started = False
+_embedded_simulator_lock = threading.Lock()
+
+
+def _run_embedded_simulator() -> None:
+    """Run the existing NoiseGuard simulator inside the backend process."""
+    try:
+        from app.services.simulator import main as simulator_main
+
+        print("[SIMULATOR] Embedded simulator starting...")
+        simulator_main()
+
+    except Exception as error:
+        print(
+            f"[SIMULATOR] Embedded simulator stopped with error: {error}"
+        )
+
+
+def _start_embedded_simulator() -> None:
+    """Start the simulator once when explicitly enabled by environment."""
+    global _embedded_simulator_thread
+    global _embedded_simulator_started
+
+    enabled = os.getenv(
+        "RUN_EMBEDDED_SIMULATOR",
+        "false",
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    if not enabled:
+        print("[SIMULATOR] Embedded simulator disabled.")
+        return
+
+    with _embedded_simulator_lock:
+        if _embedded_simulator_started:
+            print("[SIMULATOR] Embedded simulator already started.")
+            return
+
+        _embedded_simulator_started = True
+
+        _embedded_simulator_thread = threading.Thread(
+            target=_run_embedded_simulator,
+            name="noiseguard-embedded-simulator",
+            daemon=True,
+        )
+
+        _embedded_simulator_thread.start()
+
+    print("[SIMULATOR] Embedded simulator thread started.")
+
+
+@app.on_event("startup")
+async def startup_event():
+    _start_embedded_simulator()
+
 
 # ---------------------------------------------------------------------------
 # SETTINGS-AWARE AI ANALYTICS GUARD
@@ -58,6 +143,7 @@ _AI_ANALYTICS_PATHS = {
     "/api/analytics/anomalies",
     "/api/analytics/recommendations",
 }
+
 _RECOMMENDATION_PATH = "/api/analytics/recommendations"
 
 
@@ -93,6 +179,7 @@ async def ai_settings_guard(request: Request, call_next):
 
     # Use the same runtime-settings source as the rest of the backend.
     db = SessionLocal()
+
     try:
         settings = get_runtime_settings(db)
 
@@ -122,6 +209,7 @@ async def ai_settings_guard(request: Request, call_next):
 
             if "application/json" in content_type:
                 body = b""
+
                 async for chunk in response.body_iterator:
                     body += chunk
 
@@ -130,6 +218,7 @@ async def ai_settings_guard(request: Request, call_next):
                     payload = _remove_recommendation_output(payload)
                     payload["recommendation_engine_enabled"] = False
                     payload["recommendation_status"] = "disabled"
+
                     return JSONResponse(
                         status_code=response.status_code,
                         content=payload,
@@ -143,7 +232,12 @@ async def ai_settings_guard(request: Request, call_next):
                             }
                         },
                     )
-                except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                    TypeError,
+                ):
                     # Preserve the original response if it is not a JSON
                     # payload we can safely transform.
                     return Response(
@@ -158,6 +252,7 @@ async def ai_settings_guard(request: Request, call_next):
                     )
 
         return response
+
     finally:
         db.close()
 
@@ -210,7 +305,9 @@ async def noise_websocket(
     try:
         while True:
             await websocket.receive_text()
+
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket)
+
     except Exception:
         websocket_manager.disconnect(websocket)
