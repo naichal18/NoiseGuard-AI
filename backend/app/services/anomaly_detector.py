@@ -1235,6 +1235,10 @@ def get_anomaly_analysis(
             if len(readings) < LIVE_BOOTSTRAP_READINGS:
                 continue
 
+            # The bootstrap samples become the temporary baseline.
+            # The analysis loop below explicitly recognizes this key
+            # through live_bootstrap_cutoff_by_sensor_source, while
+            # excluding these same samples from anomaly scoring.
             baseline_by_sensor_source[key] = readings
 
             live_bootstrap_cutoff_by_sensor_source[key] = (
@@ -1318,8 +1322,13 @@ def get_anomaly_analysis(
         ), readings in (
             baseline_by_sensor_source.items()
         )
-        if len(readings)
-        >= MIN_BASELINE_READINGS
+        if (
+            len(readings) >= MIN_BASELINE_READINGS
+            or (
+                (sensor_id_key, source_key)
+                in live_bootstrap_cutoff_by_sensor_source
+            )
+        )
     }
 
     sensors_with_baseline = len(
