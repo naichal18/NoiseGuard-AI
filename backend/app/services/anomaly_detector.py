@@ -1051,6 +1051,173 @@ def get_anomaly_analysis(
         timezone.utc
     )
 
+    # ========================================================
+    # ALL SOURCES
+    # ========================================================
+    #
+    # Each source has its own timeline and baseline. Running the
+    # normal detector independently per source avoids mixing the
+    # historical dataset timeline with live simulator/API/sensor
+    # timelines. The individual source paths are already stable;
+    # `all` only aggregates their independent results.
+
+    if source == "all":
+        source_windows = _get_source_analysis_windows(
+            db=db,
+            hours=hours,
+            baseline_hours=baseline_hours,
+            sensor_id=sensor_id,
+            source=source,
+            now=now,
+        )
+
+        source_analyses = [
+            get_anomaly_analysis(
+                db=db,
+                hours=hours,
+                baseline_hours=baseline_hours,
+                limit=100,
+                sensor_id=sensor_id,
+                source=source_name,
+            )
+            for source_name in source_windows
+        ]
+
+        anomalies = [
+            anomaly
+            for analysis in source_analyses
+            for anomaly in analysis.get("anomalies", [])
+        ]
+
+        anomalies.sort(
+            key=lambda item: (
+                item["severity"] == "CRITICAL",
+                item["severity"] == "HIGH",
+                item["anomaly_score"],
+                item["peak_noise"],
+                item["duration_minutes"],
+            ),
+            reverse=True,
+        )
+
+        severity_summary = {
+            "critical": sum(
+                analysis.get("severity_summary", {}).get("critical", 0)
+                for analysis in source_analyses
+            ),
+            "high": sum(
+                analysis.get("severity_summary", {}).get("high", 0)
+                for analysis in source_analyses
+            ),
+            "moderate": sum(
+                analysis.get("severity_summary", {}).get("moderate", 0)
+                for analysis in source_analyses
+            ),
+            "normal": sum(
+                analysis.get("severity_summary", {}).get("normal", 0)
+                for analysis in source_analyses
+            ),
+        }
+
+        sensor_stats: dict[int, dict[str, Any]] = {}
+        severity_rank = {
+            "NORMAL": 0,
+            "MODERATE": 1,
+            "HIGH": 2,
+            "CRITICAL": 3,
+        }
+
+        for anomaly in anomalies:
+            current_sensor_id = anomaly["sensor_id"]
+            stats = sensor_stats.setdefault(
+                current_sensor_id,
+                {
+                    "sensor_id": current_sensor_id,
+                    "sensor_code": anomaly["sensor_code"],
+                    "sensor_name": anomaly["sensor_name"],
+                    "location": anomaly["location"],
+                    "anomaly_count": 0,
+                    "highest_score": 0.0,
+                    "highest_peak_noise": 0.0,
+                    "highest_severity": "NORMAL",
+                    "total_duration_minutes": 0.0,
+                },
+            )
+
+            stats["anomaly_count"] += 1
+            stats["highest_score"] = max(
+                stats["highest_score"],
+                float(anomaly["anomaly_score"]),
+            )
+            stats["highest_peak_noise"] = max(
+                stats["highest_peak_noise"],
+                float(anomaly["peak_noise"]),
+            )
+            stats["total_duration_minutes"] += float(
+                anomaly["duration_minutes"]
+            )
+
+            if severity_rank[anomaly["severity"]] > severity_rank[stats["highest_severity"]]:
+                stats["highest_severity"] = anomaly["severity"]
+
+        top_sensors = sorted(
+            sensor_stats.values(),
+            key=lambda item: (
+                severity_rank[item["highest_severity"]],
+                item["anomaly_count"],
+                item["highest_score"],
+                item["highest_peak_noise"],
+            ),
+            reverse=True,
+        )[:10]
+
+        top_sensors = [
+            {
+                **sensor,
+                "highest_score": round(float(sensor["highest_score"]), 1),
+                "highest_peak_noise": round(float(sensor["highest_peak_noise"]), 1),
+                "total_duration_minutes": round(float(sensor["total_duration_minutes"]), 1),
+            }
+            for sensor in top_sensors
+        ]
+
+        return {
+            "analysis": {
+                "period_hours": hours,
+                "baseline_hours": baseline_hours,
+                "sensor_id": sensor_id,
+                "source": "all",
+                "readings_analyzed": sum(
+                    analysis.get("analysis", {}).get("readings_analyzed", 0)
+                    for analysis in source_analyses
+                ),
+                "sensors_analyzed": sum(
+                    analysis.get("analysis", {}).get("sensors_analyzed", 0)
+                    for analysis in source_analyses
+                ),
+                "candidate_readings": sum(
+                    analysis.get("analysis", {}).get("candidate_readings", 0)
+                    for analysis in source_analyses
+                ),
+                "anomaly_count": len(anomalies),
+                "analysis_started_at": min(
+                    (window[0] for window in source_windows.values()),
+                    default=now,
+                ).isoformat(),
+                "analysis_completed_at": max(
+                    (window[1] for window in source_windows.values()),
+                    default=now,
+                ).isoformat(),
+                "analysis_windows": {
+                    source_name: analysis.get("analysis", {}).get("analysis_windows", {}).get(source_name, {})
+                    for source_name, analysis in zip(source_windows, source_analyses)
+                },
+            },
+            "severity_summary": severity_summary,
+            "top_sensors": top_sensors,
+            "anomalies": anomalies[:limit],
+        }
+
     source_windows = _get_source_analysis_windows(
         db=db,
         hours=hours,
